@@ -4,9 +4,9 @@ This repository contains various U-Net architecture variants implemented in Kera
 
 ## Models Included
 1. **UNet2D**: Basic 2D U-Net model.
-2. **ResUNet2D**: 2D Residual U-Net model.
-3. **ResUNetPlusPlus2D**: 2D Residual U-Net++ model.
-4. **AttentionUNet2D**: 2D Attention U-Net model.
+2. **ResUNet2D**: 2D Residual U-Net model. Inspired from [here](https://github.com/nikhilroxtomar/Deep-Residual-Unet/blob/master/Deep%20Residual%20UNet.ipynb).
+3. **ResUNetPlusPlus2D**: 2D Residual U-Net++ model. Inspired from [here](https://github.com/DebeshJha/ResUNetPlusPlus/).
+4. **AttentionUNet2D**: 2D Attention U-Net model. Inspired from [here](https://github.com/robinvvinod/unet/).
 
 ## Usage
 Each model is implemented as a function that can be easily called to create the corresponding architecture. The models offer flexibility in terms of levels, convolutional layers per level, starting features, dropout rate, output and activation.
