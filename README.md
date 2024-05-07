@@ -35,4 +35,4 @@ model = create_unet_2D(
 Contributions to add more U-Net variants or improve existing ones are welcome! Please follow the standard contribution guidelines.
 
 ## License
-This project is licenced under the [GNU General Public License v3](https://www.gnu.org/licenses/gpl-3.0.html).
+This project is licensed under the [GNU General Public License v3](https://www.gnu.org/licenses/gpl-3.0.html).
