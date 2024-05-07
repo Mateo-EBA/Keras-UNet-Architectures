@@ -1,22 +1,29 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Oct 11 12:41:05 2022
-
-@author: Mateo
-"""
-
-#%% Imports
+#%% --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+# Imports
 from tensorflow import keras
-import tensorflow.keras.backend as K
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Conv2DTranspose, concatenate
-from tensorflow.keras.layers import GlobalAveragePooling2D, Reshape, Dense, Multiply, multiply
-from tensorflow.keras.layers import BatchNormalization, Activation, Add, add
-from tensorflow.keras.layers import Lambda, UpSampling2D
+import keras.backend as K
+from keras.models import Model
+from keras.layers import (
+    Input,
+    Conv2D,
+    MaxPooling2D,
+    Dropout,
+    Conv2DTranspose,
+    concatenate,
+    GlobalAveragePooling2D,
+    Reshape,
+    Dense,
+    Multiply, multiply, 
+    BatchNormalization,
+    Activation,
+    Add, add,
+    Lambda,
+    UpSampling2D
+)
 
-#%% Blocks
+#%% --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+# Blocks
 # Inspired from https://github.com/DebeshJha/ResUNetPlusPlus/blob/0d64ce906acb2876c45c2ed7097dbe0a8aadae07/m_resunet.py#L1
-
 def SqueezeExciteBlock(x, ratio=8):
     channel_axis = -1
     filters = x.shape[channel_axis]
@@ -29,39 +36,39 @@ def SqueezeExciteBlock(x, ratio=8):
     
     return Multiply()([x, se])
 
-def StemBlock(x, filters, kernel_size=(3, 3), strides=1):
+def StemBlock(x, filters:int, kernel_size:tuple|list=(3, 3)):
     # Conv 1
-    conv = Conv2D(filters, kernel_size, padding='same', strides=strides)(x)
+    conv = Conv2D(filters, kernel_size, padding='same', strides=1)(x)
     conv = BatchNormalization()(conv)
     conv = Activation('relu')(conv)
     conv = Conv2D(filters, kernel_size, padding='same')(conv)
 
     # Shortcut
-    s  = Conv2D(filters, (1, 1), padding='same', strides=strides)(x)
+    s  = Conv2D(filters, (1, 1), padding='same', strides=1)(x)
     s = BatchNormalization()(s)
 
     # Add
     conv = Add()([conv, s])
     return SqueezeExciteBlock(conv)
 
-def ConvolutionBlock(x, filters, kernel_size=(3, 3), padding='same', strides=1):
+def ConvolutionBlock(x, filters:int, kernel_size:tuple|list=(3, 3), padding:str='same'):
     conv = BatchNormalization()(x)
     conv = Activation('relu')(conv)
-    conv = Conv2D(filters, kernel_size, padding=padding, strides=strides)(conv)
+    conv = Conv2D(filters, kernel_size, padding=padding, strides=1)(conv)
     return conv
 
-def ResidualBlock(x, filters, kernel_size=(3, 3), padding='same', strides=1):
+def ResidualBlock(x, filters:int, kernel_size:tuple|list=(3, 3), padding:str='same'):
     res = x
-    res = ConvolutionBlock(res, filters, kernel_size=kernel_size, padding=padding, strides=strides)
-    res = ConvolutionBlock(res, filters, kernel_size=kernel_size, padding=padding, strides=1)
+    res = ConvolutionBlock(res, filters, kernel_size=kernel_size, padding=padding)
+    res = ConvolutionBlock(res, filters, kernel_size=kernel_size, padding=padding)
     
-    shortcut = Conv2D(filters, kernel_size=(1, 1), padding=padding, strides=strides)(x)
+    shortcut = Conv2D(filters, kernel_size=(1, 1), padding=padding, strides=1)(x)
     shortcut = BatchNormalization()(shortcut)
     
     out = Add()([shortcut, res])
     return SqueezeExciteBlock(out)
 
-def ASPPBlock(x, filters, kernel_size=(3, 3), padding='same', rate_scale=1):
+def ASPPBlock(x, filters:int, kernel_size:tuple|list=(3, 3), padding:str='same', rate_scale=1):
     x1 = Conv2D(filters, kernel_size, dilation_rate=(6 * rate_scale, 6 * rate_scale), padding=padding)(x)
     x1 = BatchNormalization()(x1)
 
@@ -71,11 +78,11 @@ def ASPPBlock(x, filters, kernel_size=(3, 3), padding='same', rate_scale=1):
     x3 = Conv2D(filters, kernel_size, dilation_rate=(18 * rate_scale, 18 * rate_scale), padding=padding)(x)
     x3 = BatchNormalization()(x3)
 
-    x4 = Conv2D(filters, kernel_size, padding="same")(x)
+    x4 = Conv2D(filters, kernel_size, padding='same')(x)
     x4 = BatchNormalization()(x4)
 
     y = Add()([x1, x2, x3, x4])
-    return Conv2D(filters, (1, 1), padding="same")(y)
+    return Conv2D(filters, (1, 1), padding='same')(y)
 
 def ExpendAs(tensor, rep):
     # Anonymous lambda function to expand the specified axis by a factor of argument, rep.
@@ -129,40 +136,70 @@ def AttentionGatingBlock(x, g, inter_shape):
     output = BatchNormalization()(output)
     return output
 
-#%% create_res_unet_plusplus_2D
-def create_res_unet_plusplus_2D(input_shape, levels=3, convs_per_level=1, start_features=16, model_name = 'ResUNetPlusPlus2D'):
+#%% --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+# create_res_unet_plusplus_2D
+def create_res_unet_plusplus_2D(input_shape:tuple|list,
+                                levels:int=3,
+                                convs_per_level:int=2,
+                                start_features:int=32,
+                                dropout:float=0.5,
+                                output_activation:str='sigmoid',
+                                model_name:str='ResUNetPlusPlus2D',
+                                verbose:int=1) -> keras.Model:
+    """
+    Create a 2D Residual U-Net++ model.
+
+    Args:
+        input_shape (tuple | list): The shape of the input tensor.
+        levels (int, optional): The number of levels in the U-Net architecture. Defaults to 3.
+        convs_per_level (int, optional): The number of convolutional layers per level. Defaults to 2.
+        start_features (int, optional): The number of features in the first convolutional layer. Defaults to 32.
+        dropout (float, optional): The dropout rate. Defaults to 0.5.
+        output_activation (str, optional): The activation function for the output layer.
+            Defaults to 'sigmoid' ('softmax' for multiclass).
+        model_name (str, optional): The name of the model. Defaults to 'ResUNetPlusPlus2D'.
+        verbose (int, optional): Verbosity level. Defaults to 1.
+
+    Returns:
+        keras.Model: The 2D Residual U-Net++ model.
+    """
     keras.backend.clear_session()
-    
     convs = []
+    if len(input_shape) == 2:
+        input_shape = (input_shape[0], input_shape[1], 1)
+    if verbose > 0:
+        print(f"Input image's dimensions must be multiple of 2^levels ({2**levels})")
     
     # Input placeholder
     X_input = Input(input_shape)
     next_input = StemBlock(X_input, start_features)
     
-    # Contracting Path
+    # Encoder
     for i in range(levels):
         conv = next_input
-        for j in range(convs_per_level-1):
+        for _ in range(convs_per_level-1):
             conv = ResidualBlock(conv, start_features * (2**i), (3,3), padding='same')
         convs.append(ResidualBlock(conv, start_features * (2**i), (3,3), padding='same'))
         next_input = MaxPooling2D((2, 2))(convs[i])
+    next_input = Dropout(dropout)(next_input)
     
-    # Bridge
+    # Bottle Neck
     next_input = ASPPBlock(next_input, start_features * (2**levels))
+    next_input = Dropout(dropout)(next_input)
     
-    # Expansive Path
-    #for i in range(levels-1,-1,0):
+    # Decoder
     for i in range(levels-1):
         uconv = AttentionGatingBlock(convs[levels-i-1], next_input, start_features * (2**(levels-i)))
         deconv = Conv2DTranspose(start_features * (2**levels-i-1), (3,3), strides=(2,2), padding='same')(uconv)
         uconv = concatenate([ deconv, convs[levels-i-2] ])
-        for j in range(convs_per_level):
+        for _ in range(convs_per_level):
             uconv = ResidualBlock(uconv, start_features * (2**levels-i-1), (3,3), padding='same')
         next_input = uconv
+    next_input = Dropout(dropout)(next_input)
     
     # Output
     output = ASPPBlock(next_input, start_features)
-    output = Conv2D(1, (1, 1), padding='same', activation='sigmoid')(output)
+    output = Conv2D(1, (1, 1), padding='same', activation=output_activation)(output)
     
     # Model
-    return Model(inputs=X_input, outputs=output, name=model_name)
+    return keras.Model(inputs=X_input, outputs=output, name=model_name)

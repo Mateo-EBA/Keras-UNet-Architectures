@@ -1,19 +1,25 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Oct 11 11:25:35 2022
-
-@author: Mateo
-"""
-#%% Imports
+#%% --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+# Imports
 from tensorflow import keras
-import tensorflow.keras.backend as K
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Conv2DTranspose
-from tensorflow.keras.layers import UpSampling2D, BatchNormalization, add, multiply, Activation, Lambda
+import keras.backend as K
+from keras.models import Model
+from keras.layers import (
+    Input,
+    Conv2D,
+    MaxPooling2D,
+    Dropout,
+    Conv2DTranspose,
+    UpSampling2D,
+    BatchNormalization,
+    add,
+    multiply,
+    Activation,
+    Lambda
+)
 
-#%% AttnGatingBlock Stuff
+#%% --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+# Shorthands
 # Inspired from https://towardsdatascience.com/a-detailed-explanation-of-the-attention-u-net-b371a5590831
-
 def ExpandAs(tensor, rep):
     # Anonymous lambda function to expand the specified axis by a factor of argument, rep.
     # If tensor has shape (512,512,N), lambda will return a tensor of shape (512,512,N*rep), if specified axis=2
@@ -66,43 +72,72 @@ def AttentionGatingBlock(x, g, inter_shape):
     output = BatchNormalization()(output)
     return output
 
-#%% create_attention_unet_2D
-def create_attention_unet_2D(input_shape, levels, convs_per_level, start_features, model_name = 'AttentionUNet2D'):
+#%% --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+# create_attention_unet_2D
+def create_attention_unet_2D(input_shape:tuple|list,
+                             levels:int=3,
+                             convs_per_level:int=2,
+                             start_features:int=32,
+                             dropout:float=0.5,
+                             output_activation:str='sigmoid',
+                             model_name:str='AttentionUNet2D',
+                             verbose:int=1) -> keras.Model:
+    """
+    Create a 2D Attention U-Net model.
+
+    Args:
+        input_shape (tuple | list): The shape of the input tensor.
+        levels (int, optional): The number of levels in the U-Net architecture. Defaults to 3.
+        convs_per_level (int, optional): The number of convolutional layers per level. Defaults to 2.
+        start_features (int, optional): The number of features in the first convolutional layer. Defaults to 32.
+        dropout (float, optional): The dropout rate. Defaults to 0.5.
+        output_activation (str, optional): The activation function for the output layer.
+            Defaults to "sigmoid" ('softmax' for multiclass).
+        model_name (str, optional): The name of the model. Defaults to 'AttentionUNet2D'.
+        verbose (int, optional): Verbosity level. Defaults to 1.
+
+    Returns:
+        keras.Model: The 2D Attention U-Net model.
+    """
     keras.backend.clear_session()
-    
     convs = []
+    if len(input_shape) == 2:
+        input_shape = (input_shape[0], input_shape[1], 1)
+    if verbose > 0:
+        print(f"Input image's dimensions must be multiple of 2^levels ({2**levels})")
     
     # Input placeholder
     X_input = Input(input_shape)
     next_input = X_input
     
-    # Contracting Path
+    # Encoder
     for i in range(levels):
         conv = next_input
-        for j in range(convs_per_level-1):
-            conv = Conv2D(start_features * (2**i), (3,3), activation = "relu", padding = "same")(conv)
-        convs.append(Conv2D(start_features * (2**i), (3,3), activation = "relu", padding = "same")(conv))
+        for _ in range(convs_per_level-1):
+            conv = Conv2D(start_features * (2**i), (3,3), activation='relu', padding='same')(conv)
+        convs.append(Conv2D(start_features * (2**i), (3,3), activation='relu', padding='same')(conv))
         next_input = MaxPooling2D((2, 2))(convs[i])
+    next_input = Dropout(dropout)(next_input)
     
     # Bottle Neck
-    #next_input = Dropout(0.5)(next_input)
-    next_input = Conv2D(start_features * (2**levels), (3,3), activation = "relu", padding = "same")(next_input)
-    next_input = Conv2D(start_features * (2**levels), (3,3), activation = "relu", padding = "same")(next_input)
-    #next_input = Dropout(0.5)(next_input)
+    next_input = Conv2D(start_features * (2**levels), (3,3), activation='relu', padding='same')(next_input)
+    next_input = Conv2D(start_features * (2**levels), (3,3), activation='relu', padding='same')(next_input)
+    next_input = Dropout(dropout)(next_input)
     
-    # Expansive Path
+    # Decoder
     for i in range(levels-1,-1,-1):
-        deconv = Conv2DTranspose(start_features * (2**i), (3,3), strides = (2,2), padding = "same")(next_input)
+        deconv = Conv2DTranspose(start_features * (2**i), (3,3), strides=(2,2), padding='same')(next_input)
         uconv = AttentionGatingBlock(convs[i], deconv, start_features * (2**(i+1)))
-        for j in range(convs_per_level):
-            uconv = Conv2D(start_features * (2**i), (3,3), activation = "relu", padding = "same")(uconv)
+        for _ in range(convs_per_level):
+            uconv = Conv2D(start_features * (2**i), (3,3), activation='relu', padding='same')(uconv)
         next_input = uconv
+    next_input = Dropout(dropout)(next_input)
     
     # Output
-    output_layer = Conv2D(1, (1, 1), padding = "same", activation = "sigmoid")(next_input)
+    output_layer = Conv2D(1, (1, 1), padding='same', activation=output_activation)(next_input)
     
     # Model
-    model = Model(inputs = X_input, outputs = output_layer, name = model_name)
+    model = keras.Model(inputs=X_input, outputs=output_layer, name=model_name)
 
     return model
 
